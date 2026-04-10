@@ -16,8 +16,11 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  allowEIO3: true,
+  transports: ['polling', 'websocket']
 });
 
 const PORT = 3000;
@@ -387,7 +390,9 @@ async function startServer() {
       status: 'ok', 
       time: new Date().toISOString(),
       playersCount: Object.keys(players).length,
-      weather: gameState.weather
+      weather: gameState.weather,
+      socketClients: io.engine.clientsCount,
+      env: process.env.NODE_ENV || 'development'
     });
   });
 

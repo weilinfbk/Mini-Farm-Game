@@ -149,6 +149,7 @@ export default function App() {
   const [currentZone, setCurrentZone] = useState<'farm' | 'fishing'>('farm');
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [lastError, setLastError] = useState<string | null>(null);
 
   const joinGame = useCallback(() => {
     if (!socket) return;
@@ -173,16 +174,22 @@ export default function App() {
   useEffect(() => {
     // Initialize socket if not already initialized
     if (!socket) {
-      socket = io({
-        reconnectionAttempts: 5,
-        timeout: 10000,
-        transports: ['polling', 'websocket'], // Allow fallback to polling
+      const socketUrl = process.env.APP_URL || window.location.origin;
+      console.log('Initializing socket at:', socketUrl);
+      
+      socket = io(socketUrl, {
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        timeout: 20000,
+        transports: ['polling', 'websocket'],
+        withCredentials: true,
       });
     }
 
     const onConnect = () => {
-      console.log('Connected to server');
+      console.log('Connected to server via', socket.io.engine.transport.name);
       setConnectionStatus('connected');
+      setLastError(null);
       joinGame();
     };
 
@@ -201,14 +208,16 @@ export default function App() {
       toast.success(`你钓到了 ${fish.name}！ ${fish.icon}`);
     };
 
-    const onDisconnect = () => {
-      console.log('Disconnected from server');
+    const onDisconnect = (reason: string) => {
+      console.log('Disconnected from server:', reason);
       setConnectionStatus('connecting');
     };
 
     const onConnectError = (error: any) => {
       console.error('Connection error:', error);
       setConnectionStatus('error');
+      setLastError(error.message || String(error));
+      
       // Try to diagnose via health check
       fetch('/api/health')
         .then(res => res.json())
@@ -312,7 +321,7 @@ export default function App() {
             <p className="text-sm text-gray-500 leading-relaxed">
               {connectionStatus === 'connecting' ? '我们正在为您准备土地和种子。' : 
                connectionStatus === 'connected' ? '正在从服务器获取您的农场信息。' : 
-               '无法连接到服务器，请检查您的网络。'}
+               `错误详情: ${lastError || '未知网络错误'}`}
             </p>
           </div>
 
