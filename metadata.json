@@ -1,0 +1,5 @@
+{
+  "name": "Remix: 简易农场小游戏",
+  "description": "一个简单的多人农场小游戏，具有实时交易、天气系统和农作物升级功能。",
+  "requestFramePermissions": []
+}
