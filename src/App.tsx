@@ -148,15 +148,13 @@ export default function App() {
   const [isFishing, setIsFishing] = useState(false);
   const [currentZone, setCurrentZone] = useState<'farm' | 'fishing'>('farm');
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
 
-  useEffect(() => {
-    // Initialize socket if not already initialized
-    if (!socket) {
-      socket = io();
-    }
-
-    const onConnect = () => {
-      console.log('Connected to server');
+  const joinGame = useCallback(() => {
+    if (!socket) return;
+    
+    console.log('Attempting to join game...');
+    try {
       // Get or create a persistent player ID
       let playerId = localStorage.getItem('farm_player_id');
       if (!playerId) {
@@ -165,6 +163,27 @@ export default function App() {
       }
       // Auto-join with a default name and persistent ID
       socket.emit('join', { name: '农夫', playerId });
+    } catch (err) {
+      console.error('LocalStorage error:', err);
+      const tempId = 'guest_' + Math.random().toString(36).substring(2, 7);
+      socket.emit('join', { name: '游客', playerId: tempId });
+    }
+  }, []);
+
+  useEffect(() => {
+    // Initialize socket if not already initialized
+    if (!socket) {
+      socket = io({
+        reconnectionAttempts: 5,
+        timeout: 10000,
+        transports: ['polling', 'websocket'], // Allow fallback to polling
+      });
+    }
+
+    const onConnect = () => {
+      console.log('Connected to server');
+      setConnectionStatus('connected');
+      joinGame();
     };
 
     const onPlayerUpdate = (updatedPlayer: Player) => {
@@ -184,10 +203,12 @@ export default function App() {
 
     const onDisconnect = () => {
       console.log('Disconnected from server');
+      setConnectionStatus('connecting');
     };
 
     const onConnectError = (error: any) => {
       console.error('Connection error:', error);
+      setConnectionStatus('error');
       // Try to diagnose via health check
       fetch('/api/health')
         .then(res => res.json())
@@ -208,13 +229,17 @@ export default function App() {
     // If already connected, trigger onConnect manually
     if (socket.connected) {
       onConnect();
+    } else {
+      socket.connect();
     }
 
     // Check if tutorial should be shown
-    const hasCompletedTutorial = localStorage.getItem('farm_tutorial_completed');
-    if (!hasCompletedTutorial) {
-      setTutorialStep(0);
-    }
+    try {
+      const hasCompletedTutorial = localStorage.getItem('farm_tutorial_completed');
+      if (!hasCompletedTutorial) {
+        setTutorialStep(0);
+      }
+    } catch (e) {}
 
     return () => {
       socket.off('connect', onConnect);
@@ -224,7 +249,7 @@ export default function App() {
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
     };
-  }, []);
+  }, [joinGame]);
 
   const plantCrop = (plotIndex: number, cropId: string) => {
     socket.emit('plant', { plotIndex, cropId });
@@ -276,23 +301,46 @@ export default function App() {
               rotate: { duration: 2, repeat: Infinity, ease: "linear" },
               scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
             }}
-            className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full" 
+            className={`w-16 h-16 border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'} border-t-transparent rounded-full`} 
           />
           <div className="space-y-2">
-            <h2 className="text-xl font-bold text-gray-800">正在连接农场...</h2>
+            <h2 className="text-xl font-bold text-gray-800">
+              {connectionStatus === 'connecting' ? '正在连接农场...' : 
+               connectionStatus === 'connected' ? '正在同步数据...' : 
+               '连接遇到问题'}
+            </h2>
             <p className="text-sm text-gray-500 leading-relaxed">
-              我们正在为您准备土地和种子。如果长时间没有响应，请尝试刷新页面或检查网络连接。
+              {connectionStatus === 'connecting' ? '我们正在为您准备土地和种子。' : 
+               connectionStatus === 'connected' ? '正在从服务器获取您的农场信息。' : 
+               '无法连接到服务器，请检查您的网络。'}
             </p>
           </div>
-          <Button 
-            variant="outline" 
-            onClick={() => window.location.reload()}
-            className="mt-4 border-green-200 hover:bg-green-50 text-green-700"
-          >
-            重新加载页面
-          </Button>
+
+          <div className="flex flex-col gap-2 w-full">
+            <Button 
+              variant="outline" 
+              onClick={() => window.location.reload()}
+              className="border-green-200 hover:bg-green-50 text-green-700"
+            >
+              重新加载页面
+            </Button>
+            
+            {connectionStatus === 'connected' && (
+              <Button 
+                variant="ghost" 
+                onClick={joinGame}
+                className="text-gray-400 text-xs"
+              >
+                手动尝试同步
+              </Button>
+            )}
+          </div>
           
           <div className="pt-8 border-t border-gray-200 w-full">
+            <div className="flex justify-between text-[10px] text-gray-400 uppercase tracking-widest mb-2">
+              <span>状态: {connectionStatus}</span>
+              <span>数据: {player ? '已就绪' : '等待中'} / {gameState ? '已就绪' : '等待中'}</span>
+            </div>
             <p className="text-xs text-gray-400">
               提示：多人游戏需要稳定的网络连接以同步实时数据。
             </p>

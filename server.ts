@@ -132,42 +132,51 @@ setInterval(() => {
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
   
-  // Send initial game state immediately
-  socket.emit('gameStateUpdate', gameState);
-
   socket.on('join', ({ name, playerId }: { name: string, playerId: string }) => {
-    if (!playerId) return;
-
-    socketToPlayerId[socket.id] = playerId;
-
-    if (!players[playerId]) {
-      players[playerId] = {
-        id: playerId,
-        name: name || `农夫 ${playerId.slice(0, 4)}`,
-        gold: 10,
-        harvestCount: 0,
-        level: 1,
-        exp: 0,
-        inventory: {},
-        plots: Array(4).fill(null),
-        tools: {
-          wateringCan: 1,
-          hoe: 1,
-          scythe: 1,
-          farm: 1,
-          fishingRod: 1
-        }
-      };
-      savePlayers();
-    } else {
-      // Update name if it changed
-      if (name && name !== '农夫') {
-        players[playerId].name = name;
+    try {
+      if (!playerId) {
+        console.error('Join failed: No playerId provided');
+        return;
       }
-    }
 
-    socket.emit('playerUpdate', players[playerId]);
-    updateLeaderboard();
+      console.log(`Player ${name} (${playerId}) joining...`);
+      socketToPlayerId[socket.id] = playerId;
+
+      if (!players[playerId]) {
+        players[playerId] = {
+          id: playerId,
+          name: name || `农夫 ${playerId.slice(0, 4)}`,
+          gold: 10,
+          harvestCount: 0,
+          level: 1,
+          exp: 0,
+          inventory: {},
+          plots: Array(4).fill(null),
+          tools: {
+            wateringCan: 1,
+            hoe: 1,
+            scythe: 1,
+            farm: 1,
+            fishingRod: 1
+          }
+        };
+        savePlayers();
+      } else {
+        // Update name if it changed
+        if (name && name !== '农夫') {
+          players[playerId].name = name;
+        }
+      }
+
+      // Send both updates to ensure client is synced
+      socket.emit('gameStateUpdate', gameState);
+      socket.emit('playerUpdate', players[playerId]);
+      updateLeaderboard();
+      
+      console.log(`Player ${playerId} joined successfully`);
+    } catch (err) {
+      console.error('Error in join handler:', err);
+    }
   });
 
   socket.on('plant', ({ plotIndex, cropId }) => {
