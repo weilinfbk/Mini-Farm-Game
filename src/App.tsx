@@ -150,17 +150,65 @@ export default function App() {
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
 
   useEffect(() => {
-    socket = io();
-
-    // Get or create a persistent player ID
-    let playerId = localStorage.getItem('farm_player_id');
-    if (!playerId) {
-      playerId = Math.random().toString(36).substring(2, 15);
-      localStorage.setItem('farm_player_id', playerId);
+    // Initialize socket if not already initialized
+    if (!socket) {
+      socket = io();
     }
 
-    // Auto-join with a default name and persistent ID
-    socket.emit('join', { name: '农夫', playerId });
+    const onConnect = () => {
+      console.log('Connected to server');
+      // Get or create a persistent player ID
+      let playerId = localStorage.getItem('farm_player_id');
+      if (!playerId) {
+        playerId = Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('farm_player_id', playerId);
+      }
+      // Auto-join with a default name and persistent ID
+      socket.emit('join', { name: '农夫', playerId });
+    };
+
+    const onPlayerUpdate = (updatedPlayer: Player) => {
+      console.log('Player updated:', updatedPlayer);
+      setPlayer(updatedPlayer);
+    };
+
+    const onGameStateUpdate = (updatedGameState: GameState) => {
+      console.log('Game state updated:', updatedGameState);
+      setGameState(updatedGameState);
+    };
+
+    const onFishingResult = (fish: any) => {
+      setIsFishing(false);
+      toast.success(`你钓到了 ${fish.name}！ ${fish.icon}`);
+    };
+
+    const onDisconnect = () => {
+      console.log('Disconnected from server');
+    };
+
+    const onConnectError = (error: any) => {
+      console.error('Connection error:', error);
+      // Try to diagnose via health check
+      fetch('/api/health')
+        .then(res => res.json())
+        .then(data => console.log('Server health check:', data))
+        .catch(err => console.error('Server health check failed:', err));
+      
+      toast.error('连接服务器失败，请刷新页面重试');
+    };
+
+    // Set up listeners
+    socket.on('connect', onConnect);
+    socket.on('playerUpdate', onPlayerUpdate);
+    socket.on('gameStateUpdate', onGameStateUpdate);
+    socket.on('fishingResult', onFishingResult);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
+
+    // If already connected, trigger onConnect manually
+    if (socket.connected) {
+      onConnect();
+    }
 
     // Check if tutorial should be shown
     const hasCompletedTutorial = localStorage.getItem('farm_tutorial_completed');
@@ -168,21 +216,13 @@ export default function App() {
       setTutorialStep(0);
     }
 
-    socket.on('playerUpdate', (updatedPlayer: Player) => {
-      setPlayer(updatedPlayer);
-    });
-
-    socket.on('gameStateUpdate', (updatedGameState: GameState) => {
-      setGameState(updatedGameState);
-    });
-
-    socket.on('fishingResult', (fish: any) => {
-      setIsFishing(false);
-      toast.success(`你钓到了 ${fish.name}！ ${fish.icon}`);
-    });
-
     return () => {
-      socket.disconnect();
+      socket.off('connect', onConnect);
+      socket.off('playerUpdate', onPlayerUpdate);
+      socket.off('gameStateUpdate', onGameStateUpdate);
+      socket.off('fishingResult', onFishingResult);
+      socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
     };
   }, []);
 
@@ -226,9 +266,37 @@ export default function App() {
   if (!player || !gameState) {
     return (
       <div className="min-h-screen bg-[#f5f5f0] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm font-bold text-gray-500 animate-pulse">正在连接农场...</p>
+        <div className="flex flex-col items-center gap-6 max-w-md px-6 text-center">
+          <motion.div 
+            animate={{ 
+              rotate: 360,
+              scale: [1, 1.1, 1]
+            }}
+            transition={{ 
+              rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+              scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+            }}
+            className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full" 
+          />
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-gray-800">正在连接农场...</h2>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              我们正在为您准备土地和种子。如果长时间没有响应，请尝试刷新页面或检查网络连接。
+            </p>
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={() => window.location.reload()}
+            className="mt-4 border-green-200 hover:bg-green-50 text-green-700"
+          >
+            重新加载页面
+          </Button>
+          
+          <div className="pt-8 border-t border-gray-200 w-full">
+            <p className="text-xs text-gray-400">
+              提示：多人游戏需要稳定的网络连接以同步实时数据。
+            </p>
+          </div>
         </div>
       </div>
     );

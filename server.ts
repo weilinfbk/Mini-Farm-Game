@@ -131,6 +131,9 @@ setInterval(() => {
 // Socket Logic
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
+  
+  // Send initial game state immediately
+  socket.emit('gameStateUpdate', gameState);
 
   socket.on('join', ({ name, playerId }: { name: string, playerId: string }) => {
     if (!playerId) return;
@@ -369,6 +372,16 @@ setInterval(() => {
 }, 1000);
 
 async function startServer() {
+  // API routes
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      time: new Date().toISOString(),
+      playersCount: Object.keys(players).length,
+      weather: gameState.weather
+    });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
