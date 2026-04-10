@@ -15,9 +15,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-    credentials: true
+    origin: (origin, callback) => {
+      // Allow all origins in development/preview
+      callback(null, true);
+    },
+    methods: ["GET", "POST"]
   },
   allowEIO3: true,
   transports: ['polling', 'websocket']

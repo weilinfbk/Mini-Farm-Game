@@ -174,15 +174,13 @@ export default function App() {
   useEffect(() => {
     // Initialize socket if not already initialized
     if (!socket) {
-      const socketUrl = process.env.APP_URL || window.location.origin;
-      console.log('Initializing socket at:', socketUrl);
+      console.log('Initializing socket...');
       
-      socket = io(socketUrl, {
+      socket = io({
         reconnectionAttempts: 10,
         reconnectionDelay: 1000,
         timeout: 20000,
         transports: ['polling', 'websocket'],
-        withCredentials: true,
       });
     }
 
