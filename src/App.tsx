@@ -148,115 +148,43 @@ export default function App() {
   const [isFishing, setIsFishing] = useState(false);
   const [currentZone, setCurrentZone] = useState<'farm' | 'fishing'>('farm');
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-  const [lastError, setLastError] = useState<string | null>(null);
-
-  const joinGame = useCallback(() => {
-    if (!socket) return;
-    
-    console.log('Attempting to join game...');
-    try {
-      // Get or create a persistent player ID
-      let playerId = localStorage.getItem('farm_player_id');
-      if (!playerId) {
-        playerId = Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('farm_player_id', playerId);
-      }
-      // Auto-join with a default name and persistent ID
-      socket.emit('join', { name: '农夫', playerId });
-    } catch (err) {
-      console.error('LocalStorage error:', err);
-      const tempId = 'guest_' + Math.random().toString(36).substring(2, 7);
-      socket.emit('join', { name: '游客', playerId: tempId });
-    }
-  }, []);
 
   useEffect(() => {
-    // Initialize socket if not already initialized
-    if (!socket) {
-      console.log('Initializing socket...');
-      
-      socket = io({
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        timeout: 20000,
-        transports: ['polling', 'websocket'],
-      });
+    socket = io();
+
+    // Get or create a persistent player ID
+    let playerId = localStorage.getItem('farm_player_id');
+    if (!playerId) {
+      playerId = Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('farm_player_id', playerId);
     }
 
-    const onConnect = () => {
-      console.log('Connected to server via', socket.io.engine.transport.name);
-      setConnectionStatus('connected');
-      setLastError(null);
-      joinGame();
-    };
-
-    const onPlayerUpdate = (updatedPlayer: Player) => {
-      console.log('Player updated:', updatedPlayer);
-      setPlayer(updatedPlayer);
-    };
-
-    const onGameStateUpdate = (updatedGameState: GameState) => {
-      console.log('Game state updated:', updatedGameState);
-      setGameState(updatedGameState);
-    };
-
-    const onFishingResult = (fish: any) => {
-      setIsFishing(false);
-      toast.success(`你钓到了 ${fish.name}！ ${fish.icon}`);
-    };
-
-    const onDisconnect = (reason: string) => {
-      console.log('Disconnected from server:', reason);
-      setConnectionStatus('connecting');
-    };
-
-    const onConnectError = (error: any) => {
-      console.error('Connection error:', error);
-      setConnectionStatus('error');
-      setLastError(error.message || String(error));
-      
-      // Try to diagnose via health check
-      fetch('/api/health')
-        .then(res => res.json())
-        .then(data => console.log('Server health check:', data))
-        .catch(err => console.error('Server health check failed:', err));
-      
-      toast.error('连接服务器失败，请刷新页面重试');
-    };
-
-    // Set up listeners
-    socket.on('connect', onConnect);
-    socket.on('playerUpdate', onPlayerUpdate);
-    socket.on('gameStateUpdate', onGameStateUpdate);
-    socket.on('fishingResult', onFishingResult);
-    socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
-
-    // If already connected, trigger onConnect manually
-    if (socket.connected) {
-      onConnect();
-    } else {
-      socket.connect();
-    }
+    // Auto-join with a default name and persistent ID
+    socket.emit('join', { name: '农夫', playerId });
 
     // Check if tutorial should be shown
-    try {
-      const hasCompletedTutorial = localStorage.getItem('farm_tutorial_completed');
-      if (!hasCompletedTutorial) {
-        setTutorialStep(0);
-      }
-    } catch (e) {}
+    const hasCompletedTutorial = localStorage.getItem('farm_tutorial_completed');
+    if (!hasCompletedTutorial) {
+      setTutorialStep(0);
+    }
+
+    socket.on('playerUpdate', (updatedPlayer: Player) => {
+      setPlayer(updatedPlayer);
+    });
+
+    socket.on('gameStateUpdate', (updatedGameState: GameState) => {
+      setGameState(updatedGameState);
+    });
+
+    socket.on('fishingResult', (fish: any) => {
+      setIsFishing(false);
+      toast.success(`你钓到了 ${fish.name}！ ${fish.icon}`);
+    });
 
     return () => {
-      socket.off('connect', onConnect);
-      socket.off('playerUpdate', onPlayerUpdate);
-      socket.off('gameStateUpdate', onGameStateUpdate);
-      socket.off('fishingResult', onFishingResult);
-      socket.off('disconnect', onDisconnect);
-      socket.off('connect_error', onConnectError);
+      socket.disconnect();
     };
-  }, [joinGame]);
+  }, []);
 
   const plantCrop = (plotIndex: number, cropId: string) => {
     socket.emit('plant', { plotIndex, cropId });
@@ -295,67 +223,7 @@ export default function App() {
     socket.emit('fishing');
   };
 
-  if (!player || !gameState) {
-    return (
-      <div className="min-h-screen bg-[#f5f5f0] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6 max-w-md px-6 text-center">
-          <motion.div 
-            animate={{ 
-              rotate: 360,
-              scale: [1, 1.1, 1]
-            }}
-            transition={{ 
-              rotate: { duration: 2, repeat: Infinity, ease: "linear" },
-              scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-            }}
-            className={`w-16 h-16 border-4 ${connectionStatus === 'error' ? 'border-red-500' : 'border-green-500'} border-t-transparent rounded-full`} 
-          />
-          <div className="space-y-2">
-            <h2 className="text-xl font-bold text-gray-800">
-              {connectionStatus === 'connecting' ? '正在连接农场...' : 
-               connectionStatus === 'connected' ? '正在同步数据...' : 
-               '连接遇到问题'}
-            </h2>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              {connectionStatus === 'connecting' ? '我们正在为您准备土地和种子。' : 
-               connectionStatus === 'connected' ? '正在从服务器获取您的农场信息。' : 
-               `错误详情: ${lastError || '未知网络错误'}`}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2 w-full">
-            <Button 
-              variant="outline" 
-              onClick={() => window.location.reload()}
-              className="border-green-200 hover:bg-green-50 text-green-700"
-            >
-              重新加载页面
-            </Button>
-            
-            {connectionStatus === 'connected' && (
-              <Button 
-                variant="ghost" 
-                onClick={joinGame}
-                className="text-gray-400 text-xs"
-              >
-                手动尝试同步
-              </Button>
-            )}
-          </div>
-          
-          <div className="pt-8 border-t border-gray-200 w-full">
-            <div className="flex justify-between text-[10px] text-gray-400 uppercase tracking-widest mb-2">
-              <span>状态: {connectionStatus}</span>
-              <span>数据: {player ? '已就绪' : '等待中'} / {gameState ? '已就绪' : '等待中'}</span>
-            </div>
-            <p className="text-xs text-gray-400">
-              提示：多人游戏需要稳定的网络连接以同步实时数据。
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!player || !gameState) return null;
 
   const WeatherIcon = {
     '晴朗': Sun,

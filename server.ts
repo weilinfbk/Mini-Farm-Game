@@ -15,14 +15,9 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: (origin, callback) => {
-      // Allow all origins in development/preview
-      callback(null, true);
-    },
+    origin: "*",
     methods: ["GET", "POST"]
-  },
-  allowEIO3: true,
-  transports: ['polling', 'websocket']
+  }
 });
 
 const PORT = 3000;
@@ -136,52 +131,40 @@ setInterval(() => {
 // Socket Logic
 io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
-  
+
   socket.on('join', ({ name, playerId }: { name: string, playerId: string }) => {
-    try {
-      if (!playerId) {
-        console.error('Join failed: No playerId provided');
-        return;
-      }
+    if (!playerId) return;
 
-      console.log(`Player ${name} (${playerId}) joining...`);
-      socketToPlayerId[socket.id] = playerId;
+    socketToPlayerId[socket.id] = playerId;
 
-      if (!players[playerId]) {
-        players[playerId] = {
-          id: playerId,
-          name: name || `农夫 ${playerId.slice(0, 4)}`,
-          gold: 10,
-          harvestCount: 0,
-          level: 1,
-          exp: 0,
-          inventory: {},
-          plots: Array(4).fill(null),
-          tools: {
-            wateringCan: 1,
-            hoe: 1,
-            scythe: 1,
-            farm: 1,
-            fishingRod: 1
-          }
-        };
-        savePlayers();
-      } else {
-        // Update name if it changed
-        if (name && name !== '农夫') {
-          players[playerId].name = name;
+    if (!players[playerId]) {
+      players[playerId] = {
+        id: playerId,
+        name: name || `农夫 ${playerId.slice(0, 4)}`,
+        gold: 10,
+        harvestCount: 0,
+        level: 1,
+        exp: 0,
+        inventory: {},
+        plots: Array(4).fill(null),
+        tools: {
+          wateringCan: 1,
+          hoe: 1,
+          scythe: 1,
+          farm: 1,
+          fishingRod: 1
         }
+      };
+      savePlayers();
+    } else {
+      // Update name if it changed
+      if (name && name !== '农夫') {
+        players[playerId].name = name;
       }
-
-      // Send both updates to ensure client is synced
-      socket.emit('gameStateUpdate', gameState);
-      socket.emit('playerUpdate', players[playerId]);
-      updateLeaderboard();
-      
-      console.log(`Player ${playerId} joined successfully`);
-    } catch (err) {
-      console.error('Error in join handler:', err);
     }
+
+    socket.emit('playerUpdate', players[playerId]);
+    updateLeaderboard();
   });
 
   socket.on('plant', ({ plotIndex, cropId }) => {
@@ -386,18 +369,6 @@ setInterval(() => {
 }, 1000);
 
 async function startServer() {
-  // API routes
-  app.get('/api/health', (req, res) => {
-    res.json({ 
-      status: 'ok', 
-      time: new Date().toISOString(),
-      playersCount: Object.keys(players).length,
-      weather: gameState.weather,
-      socketClients: io.engine.clientsCount,
-      env: process.env.NODE_ENV || 'development'
-    });
-  });
-
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
